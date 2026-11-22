@@ -1,0 +1,15 @@
+{
+    "KPlugin": {
+        "Id": "local.devicebatteries",
+        "Name": "Device Batteries",
+        "Description": "Battery levels of the headset, keyboard and mouse",
+        "Icon": "battery",
+        "Category": "System Information",
+        "Version": "1.0",
+        "License": "MIT"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-NotificationArea": "true",
+    "X-Plasma-NotificationAreaCategory": "Hardware",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

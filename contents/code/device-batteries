@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+import json
+import os
+import re
+import select
+import subprocess
+import time
+from pathlib import Path
+
+ORDER = {"headset": 0, "keyboard": 1, "mouse": 2, "gaming-input": 3}
+
+
+def run(cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=15).stdout
+    except Exception:
+        return ""
+
+
+def upower_devices():
+    devices = {}
+    for block in run(["upower", "--dump"]).split("\n\n"):
+        path = re.search(r"^\s+native-path:\s+(\S+)", block, re.M)
+        if not path:
+            continue
+        model = re.search(r"^\s+model:\s+(.+)$", block, re.M)
+        kind = re.search(r"^  ([a-z][a-z-]*)$", block, re.M)
+        devices[path.group(1)] = {
+            "model": model.group(1).strip() if model else None,
+            "kind": kind.group(1) if kind else "battery",
+        }
+    return devices
+
+
+def read(path, name):
+    try:
+        return (path / name).read_text().strip()
+    except OSError:
+        return None
+
+
+def hidpp_call(fd, feature, function, params=b""):
+    swid = 0x0B
+    os.write(fd, (bytes([0x10, 0xFF, feature, (function << 4) | swid]) + params).ljust(7, b"\0"))
+    deadline = time.monotonic() + 2
+    while (left := deadline - time.monotonic()) > 0:
+        if not select.select([fd], [], [], left)[0]:
+            return None
+        data = os.read(fd, 64)
+        if len(data) < 4 or data[0] not in (0x10, 0x11):
+            continue
+        if data[2] == 0xFF and data[3] == feature:
+            return None
+        if data[2] == feature and data[3] == (function << 4) | swid:
+            return data[4:]
+    return None
+
+
+def hidpp_battery_status(supply):
+    try:
+        hidraw = next((supply / "device" / "hidraw").iterdir()).name
+        fd = os.open(f"/dev/{hidraw}", os.O_RDWR | os.O_NONBLOCK)
+    except (OSError, StopIteration):
+        return None
+    try:
+        index = hidpp_call(fd, 0x00, 0, bytes([0x10, 0x00]))
+        if not index or not index[0]:
+            return None
+        status = hidpp_call(fd, index[0], 0)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    if not status or not 0 < status[0] <= 100:
+        return None
+    return status[0], status[2]
+
+
+def kernel_batteries(skip_headsets):
+    upower = upower_devices()
+    result = []
+    for supply in sorted(Path("/sys/class/power_supply").iterdir()):
+        if read(supply, "type") != "Battery" or read(supply, "scope") != "Device":
+            continue
+        info = upower.get(supply.name, {})
+        kind = info.get("kind", "battery")
+        if kind == "headset" and skip_headsets:
+            continue
+        capacity = read(supply, "capacity")
+        level = read(supply, "capacity_level")
+        status = (read(supply, "status") or "").lower()
+        percent = int(capacity) if capacity and capacity.isdigit() else None
+        level = level if level and level != "Unknown" else None
+        if percent is None and supply.name.startswith("hidpp_battery"):
+            direct = hidpp_battery_status(supply)
+            if direct:
+                percent = direct[0]
+                status = "charging" if direct[1] in (1, 2, 4) else "full" if direct[1] == 3 else "discharging"
+        result.append({
+            "name": info.get("model") or read(supply, "model_name") or supply.name,
+            "kind": kind,
+            "percent": percent,
+            "level": level,
+            "state": "charging" if status == "charging" else "full" if status == "full" else "discharging",
+            "minutes_left": None,
+        })
+    return result
+
+
+def headsets():
+    try:
+        devices = json.loads(run(["headsetcontrol", "-b", "-o", "json"]) or "{}").get("devices", [])
+    except ValueError:
+        return []
+    result = []
+    for dev in devices:
+        battery = dev.get("battery")
+        if not battery:
+            continue
+        status = battery.get("status")
+        level = battery.get("level")
+        minutes = battery.get("time_to_empty_min")
+        result.append({
+            "name": dev.get("device") or dev.get("product") or "Headset",
+            "kind": "headset",
+            "percent": level if isinstance(level, int) and level >= 0 else None,
+            "level": None,
+            "state": "charging" if status == "BATTERY_CHARGING" else "off" if status != "BATTERY_AVAILABLE" else "discharging",
+            "minutes_left": minutes if isinstance(minutes, int) and minutes > 0 else None,
+        })
+    return result
+
+
+def main():
+    found_headsets = headsets()
+    devices = found_headsets + kernel_batteries(skip_headsets=bool(found_headsets))
+    devices.sort(key=lambda d: ORDER.get(d["kind"], 9))
+    print(json.dumps(devices))
+
+
+if __name__ == "__main__":
+    main()

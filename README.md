@@ -36,9 +36,18 @@ Other options:
 - `./install.sh -s` symlinks this folder instead of copying it, so edits here apply after the next plasmashell restart.
 - `./install.sh -r` uninstalls the widget.
 
+## Settings
+
+Right-click the tray icon and choose **Configure Device Batteries…**, or click the settings button in the panel's header.
+
+The **General** page sets the panel's order: **Default** (as the devices are found), **Name** or **Battery**, ascending or descending. With **Battery**, devices without a reading and turned-off devices always go last. **Group by status** puts charging devices first and uses the chosen order within each group.
+
+The **Devices** page lists each device with a field for its display name. Leave a field empty to use the device's own name. Renamed devices that are not connected stay in the list, so their names survive a disconnect.
+
 ## Development
 
 - `contents/ui/main.qml`: the tray icon and the panel. It reloads the readings every 60 seconds and each time the panel opens.
+- `contents/ui/configGeneral.qml`, `contents/ui/configDevices.qml` and `contents/config/`: the settings pages and their stored options (`sortBy`, `sortDescending`, `groupByStatus`, and `deviceNames`, a JSON map from each device's own name to its display name).
 - `contents/code/device-batteries`: a Python script that prints the devices as JSON (`name`, `kind`, `percent`, `level`, `state`, `minutes_left`).
 
 Run the data script on its own:

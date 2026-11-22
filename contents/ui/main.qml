@@ -23,6 +23,19 @@ PlasmoidItem {
         }
     }
 
+    readonly property var customNames: {
+        try {
+            const parsed = JSON.parse(Plasmoid.configuration.deviceNames);
+            return parsed && typeof parsed === "object" ? parsed : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function displayName(d) {
+        return customNames[d.name] || d.name;
+    }
+
     function valueText(d) {
         if (d.state === "off") return "off";
         if (d.percent !== null) return d.percent + "%";
@@ -92,6 +105,32 @@ PlasmoidItem {
     toolTipMainText: ""
     toolTipSubText: ""
 
+    function compareDevices(a, b) {
+        const sortBy = Plasmoid.configuration.sortBy;
+        const direction = Plasmoid.configuration.sortDescending ? -1 : 1;
+        if (sortBy === "name") {
+            return direction * displayName(a).localeCompare(displayName(b));
+        }
+        if (sortBy === "battery") {
+            const va = a.state === "off" ? -1 : barValue(a);
+            const vb = b.state === "off" ? -1 : barValue(b);
+            if (va < 0 || vb < 0) return (va < 0) - (vb < 0);
+            return direction * (va - vb);
+        }
+        return 0;
+    }
+
+    readonly property var sortedDevices: devices
+        .map((d, i) => ({ device: d, index: i }))
+        .sort((a, b) => {
+            if (Plasmoid.configuration.groupByStatus) {
+                const group = (b.device.state === "charging") - (a.device.state === "charging");
+                if (group !== 0) return group;
+            }
+            return compareDevices(a.device, b.device) || a.index - b.index;
+        })
+        .map(entry => entry.device)
+
     readonly property var lowest: {
         let best = null;
         for (const d of devices) {
@@ -130,7 +169,7 @@ PlasmoidItem {
         spacing: Kirigami.Units.smallSpacing
 
         Repeater {
-            model: root.devices
+            model: root.sortedDevices
 
             ColumnLayout {
                 required property var modelData
@@ -167,7 +206,7 @@ PlasmoidItem {
                             Layout.fillWidth: true
 
                             PlasmaComponents3.Label {
-                                text: modelData.name
+                                text: root.displayName(modelData)
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }

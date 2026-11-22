@@ -6,6 +6,7 @@ Plasma 6 widget (system tray entry) that shows the battery of the user's wireles
 
 - `metadata.json`: package metadata. `X-Plasma-NotificationArea` makes it a system tray entry.
 - `contents/ui/main.qml`: UI. Runs the data script every 60 s through the Plasma5Support `executable` engine.
+- `contents/config/main.xml`, `contents/config/config.qml`, `contents/ui/configGeneral.qml`, `contents/ui/configDevices.qml`: settings. `sortBy` (`default`, `name`, `battery`), `sortDescending` and `groupByStatus` (charging first) set the panel order; the tray icon always follows the lowest device. `deviceNames` is a JSON string mapping a device's reported `name` to the user's display name; the settings page runs the data script once to list devices.
 - `contents/code/device-batteries`: Python script that prints a JSON list of devices (`name`, `kind`, `percent`, `level`, `state`, `minutes_left`).
 
 ## Install and reload
